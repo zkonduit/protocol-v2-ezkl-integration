@@ -2,24 +2,27 @@
 pragma solidity ^0.8.24;
 
 // types
-import { Pool } from "./Pool.sol";
-import { AssetData, DebtData } from "./PositionManager.sol";
-import { Registry } from "./Registry.sol";
-import { RiskModule } from "./RiskModule.sol";
-import { IOracle } from "./interfaces/IOracle.sol";
+import {Pool} from "./Pool.sol";
+import {AssetData, DebtData} from "./PositionManager.sol";
+import {Registry} from "./Registry.sol";
+import {RiskModule} from "./RiskModule.sol";
+import {IOracle} from "./interfaces/IOracle.sol";
+
+import {DataAttestationSingle} from "./DA.sol";
 
 // contracts
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title RiskEngine
-contract RiskEngine is Ownable {
+contract RiskEngine is Ownable, DataAttestationSingle {
     /// @notice Timelock delay to update asset LTVs
     uint256 public constant TIMELOCK_DURATION = 24 * 60 * 60; // 24 hours
     /// @notice Timelock deadline to enforce timely updates
     uint256 public constant TIMELOCK_DEADLINE = 3 * 24 * 60 * 60; // 72 hours
     /// @notice Sentiment Pool registry key hash
     /// @dev keccak(SENTIMENT_POOL_KEY)
-    bytes32 public constant SENTIMENT_POOL_KEY = 0x1a99cbf6006db18a0e08427ff11db78f3ea1054bc5b9d48122aae8d206c09728;
+    bytes32 public constant SENTIMENT_POOL_KEY =
+        0x1a99cbf6006db18a0e08427ff11db78f3ea1054bc5b9d48122aae8d206c09728;
     /// @notice Sentiment Risk Module registry key hash
     /// @dev keccak(SENTIMENT_RISK_MODULE_KEY)
     bytes32 public constant SENTIMENT_RISK_MODULE_KEY =
@@ -53,11 +56,14 @@ contract RiskEngine is Ownable {
     /// @dev Asset to Oracle mapping
     mapping(address asset => address oracle) public oracleFor;
     /// @notice Fetch the ltv for a given asset in a pool
-    mapping(uint256 poolId => mapping(address asset => uint256 ltv)) public ltvFor;
+    mapping(uint256 poolId => mapping(address asset => uint256 ltv))
+        public ltvFor;
     /// @notice Fetch pending LTV update details for a given pool and asset pair, if any
-    mapping(uint256 poolId => mapping(address asset => LtvUpdate ltvUpdate)) public ltvUpdateFor;
+    mapping(uint256 poolId => mapping(address asset => LtvUpdate ltvUpdate))
+        public ltvUpdateFor;
     /// @notice Check if poolA lends to positions that also borrow from poolB
-    mapping(uint256 poolA => mapping(uint256 poolB => bool isAllowed)) public isAllowedPair;
+    mapping(uint256 poolA => mapping(uint256 poolB => bool isAllowed))
+        public isAllowedPair;
 
     /// @notice Pool address was updated
     event PoolSet(address pool);
@@ -72,11 +78,23 @@ contract RiskEngine is Ownable {
     /// @notice Pending LTV update was rejected
     event LtvUpdateRejected(uint256 indexed poolId, address indexed asset);
     /// @notice Pending LTV update was accepted
-    event LtvUpdateAccepted(uint256 indexed poolId, address indexed asset, uint256 ltv);
+    event LtvUpdateAccepted(
+        uint256 indexed poolId,
+        address indexed asset,
+        uint256 ltv
+    );
     /// @notice LTV update was requested
-    event LtvUpdateRequested(uint256 indexed poolId, address indexed asset, LtvUpdate ltvUpdate);
+    event LtvUpdateRequested(
+        uint256 indexed poolId,
+        address indexed asset,
+        LtvUpdate ltvUpdate
+    );
     /// @notice Allowed base pool pair toggled
-    event PoolPairToggled(uint256 indexed poolA, uint256 indexed poolB, bool isAllowed);
+    event PoolPairToggled(
+        uint256 indexed poolA,
+        uint256 indexed poolB,
+        bool isAllowed
+    );
 
     /// @notice There is no oracle associated with the given asset
     error RiskEngine_NoOracleFound(address asset);
@@ -107,7 +125,8 @@ contract RiskEngine is Ownable {
     constructor(address registry_, uint256 minLtv_, uint256 maxLtv_) Ownable() {
         if (minLtv_ == 0) revert RiskEngine_MinLtvTooLow();
         if (maxLtv_ >= 1e18) revert RiskEngine_MaxLtvTooHigh();
-        if (minLtv_ >= maxLtv_) revert RiskEngine_InvalidLtvLimits(minLtv_, maxLtv_);
+        if (minLtv_ >= maxLtv_)
+            revert RiskEngine_InvalidLtvLimits(minLtv_, maxLtv_);
 
         registry = Registry(registry_);
         minLtv = minLtv_;
@@ -125,7 +144,10 @@ contract RiskEngine is Ownable {
     }
 
     /// @notice Fetch value of given asset amount in ETH
-    function getValueInEth(address asset, uint256 amt) public view returns (uint256) {
+    function getValueInEth(
+        address asset,
+        uint256 amt
+    ) public view returns (uint256) {
         if (amt == 0) return 0;
         address oracle = oracleFor[asset];
         if (oracle == address(0)) revert RiskEngine_NoOracleFound(asset);
@@ -133,7 +155,9 @@ contract RiskEngine is Ownable {
     }
 
     /// @notice Fetch position health factor
-    function getPositionHealthFactor(address position) external view returns (uint256) {
+    function getPositionHealthFactor(
+        address position
+    ) external view returns (uint256) {
         return riskModule.getPositionHealthFactor(position);
     }
 
@@ -154,11 +178,7 @@ contract RiskEngine is Ownable {
     function validateBadDebtLiquidation(
         address position,
         DebtData[] calldata debtData
-    )
-        external
-        view
-        returns (DebtData[] memory, AssetData[] memory)
-    {
+    ) external view returns (DebtData[] memory, AssetData[] memory) {
         return riskModule.validateBadDebtLiquidation(position, debtData);
     }
 
@@ -167,37 +187,60 @@ contract RiskEngine is Ownable {
     /// @return totalAssetValue The total asset value of the position
     /// @return totalDebtValue The total debt value of the position
     /// @return minReqAssetValue The minimum required asset value for the position to be healthy
-    function getRiskData(address position) external view returns (uint256, uint256, uint256) {
+    function getRiskData(
+        address position
+    ) external view returns (uint256, uint256, uint256) {
         return riskModule.getRiskData(position);
     }
 
     /// @notice Allow poolA to lend against positions that also borrow from poolB
     /// @dev When toggled or untoggled, only applies to future borrows
     function toggleAllowedPoolPair(uint256 poolA, uint256 poolB) external {
-        if (pool.ownerOf(poolA) != msg.sender) revert RiskEngine_OnlyPoolOwner(poolA, msg.sender);
-        if (pool.ownerOf(poolB) == address(0)) revert RiskEngine_InvalidBasePool(poolB);
+        if (pool.ownerOf(poolA) != msg.sender)
+            revert RiskEngine_OnlyPoolOwner(poolA, msg.sender);
+        if (pool.ownerOf(poolB) == address(0))
+            revert RiskEngine_InvalidBasePool(poolB);
         isAllowedPair[poolA][poolB] = !isAllowedPair[poolA][poolB];
         emit PoolPairToggled(poolA, poolB, isAllowedPair[poolA][poolB]);
     }
 
     /// @notice Propose an LTV update for a given Pool-Asset pair
     /// @dev overwrites any pending or expired updates
-    function requestLtvUpdate(uint256 poolId, address asset, uint256 ltv) external {
-        if (msg.sender != pool.ownerOf(poolId)) revert RiskEngine_OnlyPoolOwner(poolId, msg.sender);
+    function requestLtvUpdate(
+        uint256 poolId,
+        address asset,
+        address verifier,
+        bytes calldata encoded
+    ) external {
+        uint256[] memory instances = getInstancesCalldata(encoded);
+        // fetch the instances value at index 20 (LTC, aka output)
+        uint256 ltv = instances[20];
+        // verifier the proof.
+        verifyWithDataAttestation(verifier, encoded);
+        if (msg.sender != pool.ownerOf(poolId))
+            revert RiskEngine_OnlyPoolOwner(poolId, msg.sender);
 
         // set oracle before ltv so risk modules don't have to explicitly check if an oracle exists
-        if (oracleFor[asset] == address(0)) revert RiskEngine_NoOracleFound(asset);
+        if (oracleFor[asset] == address(0))
+            revert RiskEngine_NoOracleFound(asset);
 
         // ensure new ltv is within global limits. also enforces that an existing ltv cannot be updated to zero
-        if (ltv < minLtv || ltv > maxLtv) revert RiskEngine_LtvLimitBreached(ltv);
+        if (ltv < minLtv || ltv > maxLtv)
+            revert RiskEngine_LtvLimitBreached(ltv);
 
         // Positions cannot borrow against the same asset that is being lent out
-        if (pool.getPoolAssetFor(poolId) == asset) revert RiskEngine_CannotBorrowPoolAsset(poolId);
+        if (pool.getPoolAssetFor(poolId) == asset)
+            revert RiskEngine_CannotBorrowPoolAsset(poolId);
 
         LtvUpdate memory ltvUpdate;
         // only modification of previously set ltvs require a timelock
-        if (ltvFor[poolId][asset] == 0) ltvUpdate = LtvUpdate({ ltv: ltv, validAfter: block.timestamp });
-        else ltvUpdate = LtvUpdate({ ltv: ltv, validAfter: block.timestamp + TIMELOCK_DURATION });
+        if (ltvFor[poolId][asset] == 0)
+            ltvUpdate = LtvUpdate({ltv: ltv, validAfter: block.timestamp});
+        else
+            ltvUpdate = LtvUpdate({
+                ltv: ltv,
+                validAfter: block.timestamp + TIMELOCK_DURATION
+            });
 
         ltvUpdateFor[poolId][asset] = ltvUpdate;
 
@@ -206,16 +249,20 @@ contract RiskEngine is Ownable {
 
     /// @notice Apply a pending LTV update
     function acceptLtvUpdate(uint256 poolId, address asset) external {
-        if (msg.sender != pool.ownerOf(poolId)) revert RiskEngine_OnlyPoolOwner(poolId, msg.sender);
-        if (oracleFor[asset] == address(0)) revert RiskEngine_NoOracleFound(asset);
+        if (msg.sender != pool.ownerOf(poolId))
+            revert RiskEngine_OnlyPoolOwner(poolId, msg.sender);
+        if (oracleFor[asset] == address(0))
+            revert RiskEngine_NoOracleFound(asset);
 
         LtvUpdate memory ltvUpdate = ltvUpdateFor[poolId][asset];
 
         // revert if there is no pending update
-        if (ltvUpdate.validAfter == 0) revert RiskEngine_NoLtvUpdate(poolId, asset);
+        if (ltvUpdate.validAfter == 0)
+            revert RiskEngine_NoLtvUpdate(poolId, asset);
 
         // revert if called before timelock delay has passed
-        if (ltvUpdate.validAfter > block.timestamp) revert RiskEngine_LtvUpdateTimelocked(poolId, asset);
+        if (ltvUpdate.validAfter > block.timestamp)
+            revert RiskEngine_LtvUpdateTimelocked(poolId, asset);
 
         // revert if timelock deadline has passed
         if (block.timestamp > ltvUpdate.validAfter + TIMELOCK_DEADLINE) {
@@ -230,7 +277,8 @@ contract RiskEngine is Ownable {
 
     /// @notice Reject a pending LTV update
     function rejectLtvUpdate(uint256 poolId, address asset) external {
-        if (msg.sender != pool.ownerOf(poolId)) revert RiskEngine_OnlyPoolOwner(poolId, msg.sender);
+        if (msg.sender != pool.ownerOf(poolId))
+            revert RiskEngine_OnlyPoolOwner(poolId, msg.sender);
 
         delete ltvUpdateFor[poolId][asset];
 
@@ -241,7 +289,8 @@ contract RiskEngine is Ownable {
     function setLtvBounds(uint256 _minLtv, uint256 _maxLtv) external onlyOwner {
         if (_minLtv == 0) revert RiskEngine_MinLtvTooLow();
         if (_maxLtv >= 1e18) revert RiskEngine_MaxLtvTooHigh();
-        if (_minLtv >= _maxLtv) revert RiskEngine_InvalidLtvLimits(_minLtv, _maxLtv);
+        if (_minLtv >= _maxLtv)
+            revert RiskEngine_InvalidLtvLimits(_minLtv, _maxLtv);
 
         minLtv = _minLtv;
         maxLtv = _maxLtv;
