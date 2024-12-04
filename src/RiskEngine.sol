@@ -8,13 +8,11 @@ import {Registry} from "./Registry.sol";
 import {RiskModule} from "./RiskModule.sol";
 import {IOracle} from "./interfaces/IOracle.sol";
 
-import {DataAttestationSingle} from "./DA.sol";
-
 // contracts
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title RiskEngine
-contract RiskEngine is Ownable, DataAttestationSingle {
+contract RiskEngine is Ownable {
     /// @notice Timelock delay to update asset LTVs
     uint256 public constant TIMELOCK_DURATION = 24 * 60 * 60; // 24 hours
     /// @notice Timelock deadline to enforce timely updates
@@ -209,14 +207,8 @@ contract RiskEngine is Ownable, DataAttestationSingle {
     function requestLtvUpdate(
         uint256 poolId,
         address asset,
-        address verifier,
-        bytes calldata encoded
+        uint256 ltv
     ) external {
-        uint256[] memory instances = getInstancesCalldata(encoded);
-        // fetch the instances value at index 20 (LTC, aka output)
-        uint256 ltv = instances[20];
-        // verifier the proof.
-        verifyWithDataAttestation(verifier, encoded);
         if (msg.sender != pool.ownerOf(poolId))
             revert RiskEngine_OnlyPoolOwner(poolId, msg.sender);
 

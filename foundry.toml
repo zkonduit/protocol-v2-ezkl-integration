@@ -15,6 +15,8 @@ evm_version = 'shanghai'
 fs_permissions = [
     { access = "read", path = "./config" },
     { access = "read", path = "./script/config" },
+    { access = "read", path = "./hex_proof_script.sh" },
+    { access = "read", path = "./tick_data.json" },
     { "access" = "write", path = "./script/logs" },
 ]
 remappings = [

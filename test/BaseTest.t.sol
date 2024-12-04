@@ -1,33 +1,35 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Deploy } from "../script/Deploy.s.sol";
-import { FixedRateModel } from "../src/irm/FixedRateModel.sol";
-import { LinearRateModel } from "../src/irm/LinearRateModel.sol";
-import { MockERC20 } from "./mocks/MockERC20.sol";
-import { MockSwap } from "./mocks/MockSwap.sol";
-import { UpgradeableBeacon } from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
-import { Test } from "forge-std/Test.sol";
-import { console2 } from "forge-std/console2.sol";
-import { Pool } from "src/Pool.sol";
-import { Position } from "src/Position.sol";
-import { PositionManager } from "src/PositionManager.sol";
-import { Action, Operation, PositionManager } from "src/PositionManager.sol";
-import { Registry } from "src/Registry.sol";
-import { RiskEngine } from "src/RiskEngine.sol";
-import { RiskModule } from "src/RiskModule.sol";
-import { SuperPool } from "src/SuperPool.sol";
-import { SuperPoolFactory } from "src/SuperPoolFactory.sol";
-import { PortfolioLens } from "src/lens/PortfolioLens.sol";
-import { SuperPoolLens } from "src/lens/SuperPoolLens.sol";
-import { FixedPriceOracle } from "src/oracle/FixedPriceOracle.sol";
+import {Deploy} from "../script/Deploy.s.sol";
+import {FixedRateModel} from "../src/irm/FixedRateModel.sol";
+import {LinearRateModel} from "../src/irm/LinearRateModel.sol";
+import {MockERC20} from "./mocks/MockERC20.sol";
+import {MockSwap} from "./mocks/MockSwap.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {Test} from "forge-std/Test.sol";
+import {console2} from "forge-std/console2.sol";
+import {Pool} from "src/Pool.sol";
+import {Position} from "src/Position.sol";
+import {PositionManager} from "src/PositionManager.sol";
+import {Action, Operation, PositionManager} from "src/PositionManager.sol";
+import {Registry} from "src/Registry.sol";
+import {RiskEngine} from "src/RiskEngine.sol";
+import {RiskModule} from "src/RiskModule.sol";
+import {SuperPool} from "src/SuperPool.sol";
+import {SuperPoolFactory} from "src/SuperPoolFactory.sol";
+import {PortfolioLens} from "src/lens/PortfolioLens.sol";
+import {SuperPoolLens} from "src/lens/SuperPoolLens.sol";
+import {FixedPriceOracle} from "src/oracle/FixedPriceOracle.sol";
+import {Comptroller} from "src/ezkl/Comptroller.sol";
+import {Halo2Verifier} from "src/ezkl/Verifier.sol";
 
 contract BaseTest is Test {
     address public user = makeAddr("user");
     address public user2 = makeAddr("user2");
     address public lender = makeAddr("lender");
-    address public poolOwner = makeAddr("poolOwner");
+    address public poolOwner;
     address public proxyAdmin = makeAddr("proxyAdmin");
     address public protocolOwner = makeAddr("protocolOwner");
 
@@ -37,7 +39,11 @@ contract BaseTest is Test {
 
     MockSwap public mockswap;
     bytes4 public constant SWAP_FUNC_SELECTOR =
-        bytes4(bytes32(0xdf791e5000000000000000000000000000000000000000000000000000000000));
+        bytes4(
+            bytes32(
+                0xdf791e5000000000000000000000000000000000000000000000000000000000
+            )
+        );
 
     uint256 public fixedRatePool;
     uint256 public linearRatePool;
@@ -46,6 +52,9 @@ contract BaseTest is Test {
     uint256 public alternateAssetPool;
 
     Deploy public protocol;
+    uint public constant LOOKBACK_DAYS = 20;
+    Comptroller public comptroller;
+    int256[] public dailyTicks;
 
     function setUp() public virtual {
         Deploy.DeployParams memory params = Deploy.DeployParams({
@@ -77,7 +86,10 @@ contract BaseTest is Test {
         protocol.positionManager().toggleKnownAsset(address(asset2));
         protocol.positionManager().toggleKnownAsset(address(asset3));
         protocol.positionManager().toggleKnownSpender(address(mockswap));
-        protocol.positionManager().toggleKnownFunc(address(mockswap), SWAP_FUNC_SELECTOR);
+        protocol.positionManager().toggleKnownFunc(
+            address(mockswap),
+            SWAP_FUNC_SELECTOR
+        );
         vm.stopPrank();
 
         FixedPriceOracle testOracle = new FixedPriceOracle(1e18);
@@ -97,11 +109,80 @@ contract BaseTest is Test {
         bytes32 LINEAR_RATE_MODEL2_KEY = 0xd61dc960093d99acc135f998430c41a550d91de727e66a94fd8e7a8a24d99ecf;
 
         vm.startPrank(protocolOwner);
-        Registry(protocol.registry()).setRateModel(FIXED_RATE_MODEL_KEY, fixedRateModel);
-        Registry(protocol.registry()).setRateModel(LINEAR_RATE_MODEL_KEY, linearRateModel);
-        Registry(protocol.registry()).setRateModel(FIXED_RATE_MODEL2_KEY, fixedRateModel2);
-        Registry(protocol.registry()).setRateModel(LINEAR_RATE_MODEL2_KEY, linearRateModel2);
+        Registry(protocol.registry()).setRateModel(
+            FIXED_RATE_MODEL_KEY,
+            fixedRateModel
+        );
+        Registry(protocol.registry()).setRateModel(
+            LINEAR_RATE_MODEL_KEY,
+            linearRateModel
+        );
+        Registry(protocol.registry()).setRateModel(
+            FIXED_RATE_MODEL2_KEY,
+            fixedRateModel2
+        );
+        Registry(protocol.registry()).setRateModel(
+            LINEAR_RATE_MODEL2_KEY,
+            linearRateModel2
+        );
         vm.stopPrank();
+
+        // Load historical tick data from a JSON file
+        string memory jsonData = vm.readFile("tick_data.json");
+        bytes memory parsedData = vm.parseJson(jsonData);
+        dailyTicks = abi.decode(parsedData, (int256[]));
+
+        // Ensure we have enough data
+        require(
+            dailyTicks.length >= LOOKBACK_DAYS,
+            "Not enough historical data"
+        );
+
+        // Take last LOOKBACK_DAYS ticks
+        int256[] memory recentTicks = new int256[](LOOKBACK_DAYS);
+        for (uint i = 0; i < LOOKBACK_DAYS; i++) {
+            recentTicks[i] = dailyTicks[dailyTicks.length - LOOKBACK_DAYS + i];
+        }
+        // Deploy the verifier contract
+        Halo2Verifier verifier = new Halo2Verifier();
+
+        uint256[20] memory scales = [
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192),
+            uint256(8192)
+        ];
+
+        // Deploy the Comptroller contract
+        comptroller = new Comptroller(
+            recentTicks,
+            address(protocol.pool()), // TODO: deploy mock uniswap pool and use it here
+            bytes(
+                "0x6c404a320000000000000000000000000000000000000000000000000000000000000014"
+            ), // calldata to the view function that returns the price data
+            1, // number of decimals in the price data
+            scales, // scales
+            0, // instance offset
+            address(this), // admin
+            address(verifier)
+        );
+        poolOwner = address(comptroller);
 
         asset1.mint(poolOwner, 4e7);
         asset2.mint(poolOwner, 1e7);
@@ -110,69 +191,118 @@ contract BaseTest is Test {
         asset1.approve(address(protocol.pool()), type(uint256).max);
         asset2.approve(address(protocol.pool()), type(uint256).max);
         fixedRatePool = protocol.pool().initializePool(
-            poolOwner, address(asset1), FIXED_RATE_MODEL_KEY, type(uint256).max, type(uint256).max, 1e7
+            poolOwner,
+            address(asset1),
+            FIXED_RATE_MODEL_KEY,
+            type(uint256).max,
+            type(uint256).max,
+            1e7
         );
         linearRatePool = protocol.pool().initializePool(
-            poolOwner, address(asset1), LINEAR_RATE_MODEL_KEY, type(uint256).max, type(uint256).max, 1e7
+            poolOwner,
+            address(asset1),
+            LINEAR_RATE_MODEL_KEY,
+            type(uint256).max,
+            type(uint256).max,
+            1e7
         );
         fixedRatePool2 = protocol.pool().initializePool(
-            poolOwner, address(asset1), FIXED_RATE_MODEL2_KEY, type(uint256).max, type(uint256).max, 1e7
+            poolOwner,
+            address(asset1),
+            FIXED_RATE_MODEL2_KEY,
+            type(uint256).max,
+            type(uint256).max,
+            1e7
         );
         linearRatePool2 = protocol.pool().initializePool(
-            poolOwner, address(asset1), LINEAR_RATE_MODEL2_KEY, type(uint256).max, type(uint256).max, 1e7
+            poolOwner,
+            address(asset1),
+            LINEAR_RATE_MODEL2_KEY,
+            type(uint256).max,
+            type(uint256).max,
+            1e7
         );
         alternateAssetPool = protocol.pool().initializePool(
-            poolOwner, address(asset2), FIXED_RATE_MODEL_KEY, type(uint256).max, type(uint256).max, 1e7
+            poolOwner,
+            address(asset2),
+            FIXED_RATE_MODEL_KEY,
+            type(uint256).max,
+            type(uint256).max,
+            1e7
         );
         vm.stopPrank();
     }
 
-    function newPosition(address owner, bytes32 salt) internal view returns (address payable, Action memory) {
+    function newPosition(
+        address owner,
+        bytes32 salt
+    ) internal view returns (address payable, Action memory) {
         bytes memory data = abi.encodePacked(owner, salt);
-        (address position,) = protocol.portfolioLens().predictAddress(owner, salt);
-        Action memory action = Action({ op: Operation.NewPosition, data: data });
+        (address position, ) = protocol.portfolioLens().predictAddress(
+            owner,
+            salt
+        );
+        Action memory action = Action({op: Operation.NewPosition, data: data});
         return (payable(position), action);
     }
 
-    function deposit(address asset, uint256 amt) internal pure returns (Action memory) {
+    function deposit(
+        address asset,
+        uint256 amt
+    ) internal pure returns (Action memory) {
         bytes memory data = abi.encodePacked(asset, amt);
-        Action memory action = Action({ op: Operation.Deposit, data: data });
+        Action memory action = Action({op: Operation.Deposit, data: data});
         return action;
     }
 
     function addToken(address asset) internal pure returns (Action memory) {
         bytes memory data = abi.encodePacked(asset);
-        Action memory action = Action({ op: Operation.AddToken, data: data });
+        Action memory action = Action({op: Operation.AddToken, data: data});
         return action;
     }
 
     function removeToken(address asset) internal pure returns (Action memory) {
         bytes memory data = abi.encodePacked(asset);
-        Action memory action = Action({ op: Operation.RemoveToken, data: data });
+        Action memory action = Action({op: Operation.RemoveToken, data: data});
         return action;
     }
 
-    function borrow(uint256 poolId, uint256 amt) internal pure returns (Action memory) {
+    function borrow(
+        uint256 poolId,
+        uint256 amt
+    ) internal pure returns (Action memory) {
         bytes memory data = abi.encodePacked(poolId, amt);
-        Action memory action = Action({ op: Operation.Borrow, data: data });
+        Action memory action = Action({op: Operation.Borrow, data: data});
         return action;
     }
 
-    function approve(address spender, address asset, uint256 amt) internal pure returns (Action memory) {
+    function approve(
+        address spender,
+        address asset,
+        uint256 amt
+    ) internal pure returns (Action memory) {
         bytes memory data = abi.encodePacked(spender, asset, amt);
-        Action memory action = Action({ op: Operation.Approve, data: data });
+        Action memory action = Action({op: Operation.Approve, data: data});
         return action;
     }
 
-    function transfer(address recipient, address asset, uint256 amt) internal pure returns (Action memory) {
+    function transfer(
+        address recipient,
+        address asset,
+        uint256 amt
+    ) internal pure returns (Action memory) {
         bytes memory data = abi.encodePacked(recipient, asset, amt);
-        Action memory action = Action({ op: Operation.Transfer, data: data });
+        Action memory action = Action({op: Operation.Transfer, data: data});
         return action;
     }
 
-    function exec(address target, uint256 value, bytes memory execData) internal pure returns (Action memory) {
+    function exec(
+        address target,
+        uint256 value,
+        bytes memory execData
+    ) internal pure returns (Action memory) {
         bytes memory data = abi.encodePacked(target, value, execData);
-        Action memory action = Action({ op: Operation.Exec, data: data });
+        Action memory action = Action({op: Operation.Exec, data: data});
         return action;
     }
 }

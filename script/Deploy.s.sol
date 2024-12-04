@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { BaseScript } from "./BaseScript.s.sol";
-import { UpgradeableBeacon } from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
-import { Pool } from "src/Pool.sol";
-import { Position } from "src/Position.sol";
-import { PositionManager } from "src/PositionManager.sol";
-import { Registry } from "src/Registry.sol";
-import { RiskEngine } from "src/RiskEngine.sol";
-import { RiskModule } from "src/RiskModule.sol";
-import { SuperPoolFactory } from "src/SuperPoolFactory.sol";
-import { PortfolioLens } from "src/lens/PortfolioLens.sol";
-import { SuperPoolLens } from "src/lens/SuperPoolLens.sol";
+import {BaseScript} from "./BaseScript.s.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {Pool} from "src/Pool.sol";
+import {Position} from "src/Position.sol";
+import {PositionManager} from "src/PositionManager.sol";
+import {Registry} from "src/Registry.sol";
+import {RiskEngine} from "src/RiskEngine.sol";
+import {RiskModule} from "src/RiskModule.sol";
+import {SuperPoolFactory} from "src/SuperPoolFactory.sol";
+import {PortfolioLens} from "src/lens/PortfolioLens.sol";
+import {SuperPoolLens} from "src/lens/SuperPoolLens.sol";
 
 contract Deploy is BaseScript {
     // registry
@@ -55,7 +55,8 @@ contract Deploy is BaseScript {
     bytes32 public constant SENTIMENT_POSITION_MANAGER_KEY =
         0xd4927490fbcbcafca716cca8e8c8b7d19cda785679d224b14f15ce2a9a93e148;
     // keccak(SENTIMENT_POOL_KEY)
-    bytes32 public constant SENTIMENT_POOL_KEY = 0x1a99cbf6006db18a0e08427ff11db78f3ea1054bc5b9d48122aae8d206c09728;
+    bytes32 public constant SENTIMENT_POOL_KEY =
+        0x1a99cbf6006db18a0e08427ff11db78f3ea1054bc5b9d48122aae8d206c09728;
     // keccak(SENTIMENT_RISK_ENGINE_KEY)
     bytes32 public constant SENTIMENT_RISK_ENGINE_KEY =
         0x5b6696788621a5d6b5e3b02a69896b9dd824ebf1631584f038a393c29b6d7555;
@@ -82,9 +83,17 @@ contract Deploy is BaseScript {
         // registry
         registry = new Registry();
         // risk
-        riskEngine = new RiskEngine(address(registry), params.minLtv, params.maxLtv);
+        riskEngine = new RiskEngine(
+            address(registry),
+            params.minLtv,
+            params.maxLtv
+        );
         riskEngine.transferOwnership(params.owner);
-        riskModule = new RiskModule(address(registry), params.liquidationDiscount, params.liquidationFee);
+        riskModule = new RiskModule(
+            address(registry),
+            params.liquidationDiscount,
+            params.liquidationFee
+        );
         // pool
         poolImpl = address(new Pool());
         bytes memory poolInitData = abi.encodeWithSelector(
@@ -97,27 +106,60 @@ contract Deploy is BaseScript {
             params.defaultInterestFee,
             params.defaultOriginationFee
         );
-        pool = Pool(address(new TransparentUpgradeableProxy(poolImpl, params.proxyAdmin, poolInitData)));
+        pool = Pool(
+            address(
+                new TransparentUpgradeableProxy(
+                    poolImpl,
+                    params.proxyAdmin,
+                    poolInitData
+                )
+            )
+        );
         // super pool factory
         superPoolFactory = new SuperPoolFactory(address(pool));
         // position manager
         positionManagerImpl = address(new PositionManager());
-        bytes memory posmgrInitData =
-            abi.encodeWithSelector(PositionManager.initialize.selector, params.owner, address(registry));
+        bytes memory posmgrInitData = abi.encodeWithSelector(
+            PositionManager.initialize.selector,
+            params.owner,
+            address(registry)
+        );
         positionManager = PositionManager(
-            address(new TransparentUpgradeableProxy(positionManagerImpl, params.proxyAdmin, posmgrInitData))
+            address(
+                new TransparentUpgradeableProxy(
+                    positionManagerImpl,
+                    params.proxyAdmin,
+                    posmgrInitData
+                )
+            )
         );
         // position
-        address positionImpl = address(new Position(address(pool), address(positionManager), address(riskEngine)));
+        address positionImpl = address(
+            new Position(
+                address(pool),
+                address(positionManager),
+                address(riskEngine)
+            )
+        );
         positionBeacon = address(new UpgradeableBeacon(positionImpl));
         // lens
         superPoolLens = new SuperPoolLens(address(pool), address(riskEngine));
-        portfolioLens = new PortfolioLens(address(pool), address(riskEngine), address(positionManager));
+        portfolioLens = new PortfolioLens(
+            address(pool),
+            address(riskEngine),
+            address(positionManager)
+        );
         // register modules
-        registry.setAddress(SENTIMENT_POSITION_MANAGER_KEY, address(positionManager));
+        registry.setAddress(
+            SENTIMENT_POSITION_MANAGER_KEY,
+            address(positionManager)
+        );
         registry.setAddress(SENTIMENT_POOL_KEY, address(pool));
         registry.setAddress(SENTIMENT_RISK_ENGINE_KEY, address(riskEngine));
-        registry.setAddress(SENTIMENT_POSITION_BEACON_KEY, address(positionBeacon));
+        registry.setAddress(
+            SENTIMENT_POSITION_BEACON_KEY,
+            address(positionBeacon)
+        );
         registry.setAddress(SENTIMENT_RISK_MODULE_KEY, address(riskModule));
         registry.transferOwnership(params.owner);
         // update module addresses
@@ -134,16 +176,34 @@ contract Deploy is BaseScript {
 
         params.owner = vm.parseJsonAddress(config, "$.Deploy.owner");
         params.proxyAdmin = vm.parseJsonAddress(config, "$.Deploy.proxyAdmin");
-        params.feeRecipient = vm.parseJsonAddress(config, "$.Deploy.feeRecipient");
+        params.feeRecipient = vm.parseJsonAddress(
+            config,
+            "$.Deploy.feeRecipient"
+        );
         params.minLtv = vm.parseJsonUint(config, "$.Deploy.minLtv");
         params.maxLtv = vm.parseJsonUint(config, "$.Deploy.maxLtv");
         params.minDebt = vm.parseJsonUint(config, "$.Deploy.minDebt");
         params.minBorrow = vm.parseJsonUint(config, "$.Deploy.minBorrow");
-        params.liquidationFee = vm.parseJsonUint(config, "$.Deploy.liquidationFee");
-        params.liquidationDiscount = vm.parseJsonUint(config, "$.Deploy.liquidationDiscount");
-        params.badDebtLiquidationDiscount = vm.parseJsonUint(config, "$.Deploy.badDebtLiquidationDiscount");
-        params.defaultInterestFee = vm.parseJsonUint(config, "$.Deploy.defaultInterestFee");
-        params.defaultOriginationFee = vm.parseJsonUint(config, "$.Deploy.defaultOriginationFee");
+        params.liquidationFee = vm.parseJsonUint(
+            config,
+            "$.Deploy.liquidationFee"
+        );
+        params.liquidationDiscount = vm.parseJsonUint(
+            config,
+            "$.Deploy.liquidationDiscount"
+        );
+        params.badDebtLiquidationDiscount = vm.parseJsonUint(
+            config,
+            "$.Deploy.badDebtLiquidationDiscount"
+        );
+        params.defaultInterestFee = vm.parseJsonUint(
+            config,
+            "$.Deploy.defaultInterestFee"
+        );
+        params.defaultOriginationFee = vm.parseJsonUint(
+            config,
+            "$.Deploy.defaultOriginationFee"
+        );
 
         require(params.owner != params.proxyAdmin, "OWNER == PROXY_ADMIN");
     }
@@ -154,7 +214,11 @@ contract Deploy is BaseScript {
         // deployed contracts
         vm.serializeAddress(obj, "registry", address(registry));
         vm.serializeAddress(obj, "superPoolFactory", address(superPoolFactory));
-        vm.serializeAddress(obj, "positionManagerImpl", address(positionManagerImpl));
+        vm.serializeAddress(
+            obj,
+            "positionManagerImpl",
+            address(positionManagerImpl)
+        );
         vm.serializeAddress(obj, "positionManager", address(positionManager));
         vm.serializeAddress(obj, "riskEngine", address(riskEngine));
         vm.serializeAddress(obj, "riskModule", address(riskModule));
@@ -172,13 +236,26 @@ contract Deploy is BaseScript {
         vm.serializeUint(obj, "maxLtv", params.maxLtv);
         vm.serializeUint(obj, "minDebt", params.minDebt);
         vm.serializeUint(obj, "liquidationFee", params.liquidationFee);
-        vm.serializeUint(obj, "liquidationDiscount", params.liquidationDiscount);
+        vm.serializeUint(
+            obj,
+            "liquidationDiscount",
+            params.liquidationDiscount
+        );
 
         // deployment details
         vm.serializeUint(obj, "chainId", block.chainid);
-        string memory json = vm.serializeUint(obj, "timestamp", vm.getBlockTimestamp());
+        string memory json = vm.serializeUint(
+            obj,
+            "timestamp",
+            vm.getBlockTimestamp()
+        );
 
-        string memory path = string.concat(getLogPathBase(), "Deploy-", vm.toString(vm.getBlockTimestamp()), ".json");
+        string memory path = string.concat(
+            getLogPathBase(),
+            "Deploy-",
+            vm.toString(vm.getBlockTimestamp()),
+            ".json"
+        );
         vm.writeJson(json, path);
     }
 }
