@@ -10,6 +10,7 @@ import {RiskEngine} from "src/RiskEngine.sol";
 import {FixedPriceOracle} from "src/oracle/FixedPriceOracle.sol";
 import {UniTickAttestor} from "src/ezkl/UniTickAttestor.sol";
 import {Halo2Verifier} from "src/ezkl/Verifier.sol";
+import {console2} from "forge-std/console2.sol";
 
 contract RiskEngineUnitTests is BaseTest {
     Pool pool;
@@ -106,12 +107,12 @@ contract RiskEngineUnitTests is BaseTest {
     function testRiskEngineInit() public {
         RiskEngine testRiskEngine = new RiskEngine(
             address(registry),
-            0.01e18,
-            0.99e18
+            0.1e18,
+            0.9e18
         );
         assertEq(address(testRiskEngine.registry()), address(registry));
-        assertEq(testRiskEngine.minLtv(), 0.2e18);
-        assertEq(testRiskEngine.maxLtv(), 0.8e18);
+        assertEq(testRiskEngine.minLtv(), 0.1e18);
+        assertEq(testRiskEngine.maxLtv(), 0.9e18);
     }
 
     function testNoOracleFound(address asset) public view {
@@ -123,14 +124,16 @@ contract RiskEngineUnitTests is BaseTest {
         uint256 startLtv = riskEngine.ltvFor(linearRatePool, address(asset1));
         assertEq(startLtv, 0);
 
+        // Get proof data and log its size
         string[] memory inputs = new string[](1);
         inputs[0] = "./hex_proof_script.sh";
         bytes memory proof = vm.ffi(inputs);
 
         comptroller.ltvUpdate(
             Comptroller.LtvUpdate.Request,
+            address(riskEngine),
             linearRatePool,
-            address(asset1),
+            address(asset2),
             abi.encodeWithSelector(
                 Halo2Verifier.verifyProof.selector,
                 proof,
@@ -140,8 +143,9 @@ contract RiskEngineUnitTests is BaseTest {
 
         comptroller.ltvUpdate(
             Comptroller.LtvUpdate.Accept,
+            address(riskEngine),
             linearRatePool,
-            address(asset1),
+            address(asset2),
             ""
         );
 

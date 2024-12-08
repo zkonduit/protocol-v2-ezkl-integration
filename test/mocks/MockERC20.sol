@@ -12,7 +12,11 @@ contract MockERC20 {
 
     event Transfer(address indexed from, address indexed to, uint256 amount);
 
-    event Approval(address indexed owner, address indexed spender, uint256 amount);
+    event Approval(
+        address indexed owner,
+        address indexed spender,
+        uint256 amount
+    );
 
     /*//////////////////////////////////////////////////////////////
                             METADATA STORAGE
@@ -83,10 +87,15 @@ contract MockERC20 {
         return true;
     }
 
-    function transferFrom(address from, address to, uint256 amount) public returns (bool) {
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) public returns (bool) {
         uint256 allowed = allowance[from][msg.sender]; // Saves gas for limited approvals.
 
-        if (allowed != type(uint256).max) allowance[from][msg.sender] = allowed - amount;
+        if (allowed != type(uint256).max)
+            allowance[from][msg.sender] = allowed - amount;
 
         balanceOf[from] -= amount;
 
@@ -113,9 +122,7 @@ contract MockERC20 {
         uint8 v,
         bytes32 r,
         bytes32 s
-    )
-        public
-    {
+    ) public {
         require(deadline >= block.timestamp, "PERMIT_DEADLINE_EXPIRED");
 
         // Unchecked because the only math done is incrementing
@@ -145,7 +152,10 @@ contract MockERC20 {
                 s
             );
 
-            require(recoveredAddress != address(0) && recoveredAddress == owner, "INVALID_SIGNER");
+            require(
+                recoveredAddress != address(0) && recoveredAddress == owner,
+                "INVALID_SIGNER"
+            );
 
             allowance[recoveredAddress][spender] = value;
         }
@@ -154,19 +164,25 @@ contract MockERC20 {
     }
 
     function DOMAIN_SEPARATOR() public view returns (bytes32) {
-        return block.chainid == INITIAL_CHAIN_ID ? INITIAL_DOMAIN_SEPARATOR : computeDomainSeparator();
+        return
+            block.chainid == INITIAL_CHAIN_ID
+                ? INITIAL_DOMAIN_SEPARATOR
+                : computeDomainSeparator();
     }
 
     function computeDomainSeparator() internal view returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256(bytes(name)),
-                keccak256("1"),
-                block.chainid,
-                address(this)
-            )
-        );
+        return
+            keccak256(
+                abi.encode(
+                    keccak256(
+                        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                    ),
+                    keccak256(bytes(name)),
+                    keccak256("1"),
+                    block.chainid,
+                    address(this)
+                )
+            );
     }
 
     /*//////////////////////////////////////////////////////////////
