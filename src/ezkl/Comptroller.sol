@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {RiskEngine} from "../RiskEngine.sol";
 import {DataAttestationSingle} from "./DA.sol";
 import {UniTickAttestor} from "./UniTickAttestor.sol";
+import {Halo2Verifier} from "./Verifier.sol";
 
 /// @title Replaces governance control of `RiskEngine.sol` with a comptroller contact
 /// @notice Handles data aggregation, data attestation and verification of an off-chain data science model SNARKED using EZKL library
@@ -124,12 +125,10 @@ contract Comptroller is DataAttestationSingle {
         address _riskEngine,
         uint256 _poolId,
         address _asset,
-        bytes calldata _encodedProofData
+        bytes memory proof,
+        uint[] memory instances
     ) external {
         if (_action == LtvUpdate.Request) {
-            uint256[] memory instances = getInstancesCalldata(
-                _encodedProofData
-            );
             // fetch the instances value at index 20 (LTC, aka output), then scale it to e18
             uint256 volatility = instances[20];
             // perform 1 - volatility scales to get ltv
@@ -139,6 +138,11 @@ contract Comptroller is DataAttestationSingle {
                 ltv = 1e18 - rescaledVolatility;
             }
             // verify the proof.
+            bytes memory _encodedProofData = abi.encodeWithSelector(
+                Halo2Verifier.verifyProof.selector,
+                proof,
+                instances
+            );
             verifyWithDataAttestation(verifier, _encodedProofData);
             RiskEngine(_riskEngine).requestLtvUpdate(_poolId, _asset, 0.81e18);
         } else if (_action == LtvUpdate.Accept) {

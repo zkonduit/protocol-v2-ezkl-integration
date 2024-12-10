@@ -134,19 +134,19 @@ contract RiskEngineUnitTests is BaseTest {
             address(riskEngine),
             linearRatePool,
             address(asset2),
-            abi.encodeWithSelector(
-                Halo2Verifier.verifyProof.selector,
-                proof,
-                instances
-            )
+            proof,
+            instances
         );
+
+        uint[] memory dummyInstances = new uint[](0);
 
         comptroller.ltvUpdate(
             Comptroller.LtvUpdate.Accept,
             address(riskEngine),
             linearRatePool,
             address(asset2),
-            ""
+            "",
+            dummyInstances
         );
 
         // assertEq(riskEngine.ltvFor(linearRatePool, address(asset2)), 0.75e18);

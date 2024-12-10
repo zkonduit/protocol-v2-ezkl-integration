@@ -395,10 +395,10 @@ contract DataAttestationSingle is LoadInstances, SwapProofCommitments {
      */
     function verifyWithDataAttestation(
         address verifier,
-        bytes calldata encoded
+        bytes memory encoded
     ) public view returns (bool) {
         require(verifier.code.length > 0, "Address: call to non-contract");
-        attestData(getInstancesCalldata(encoded));
+        attestData(getInstancesMemory(encoded));
         // static call the verifier contract to verify the proof
         (bool success, bytes memory returndata) = verifier.staticcall(encoded);
 
