@@ -121,7 +121,7 @@ contract RiskEngineUnitTests is BaseTest {
     }
 
     function testComptrollerCanUpdateLTV() public {
-        uint256 startLtv = riskEngine.ltvFor(linearRatePool, address(asset1));
+        uint256 startLtv = riskEngine.ltvFor(linearRatePool, address(asset2));
         assertEq(startLtv, 0);
 
         // Get proof data and log its size
@@ -149,7 +149,10 @@ contract RiskEngineUnitTests is BaseTest {
             dummyInstances
         );
 
-        // assertEq(riskEngine.ltvFor(linearRatePool, address(asset2)), 0.75e18);
+        assertEq(
+            riskEngine.ltvFor(linearRatePool, address(asset2)),
+            898681640625000000
+        );
     }
 
     function testOnlyOwnerCanUpdateLTV(address sender) public {

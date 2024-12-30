@@ -94,23 +94,6 @@ contract BaseTest is Test {
     }
 
     // Split pool creation into separate function
-    function createUniswapPool(
-        address factoryAddress
-    ) internal returns (address) {
-        IUniswapV3Factory factory = IUniswapV3Factory(factoryAddress);
-        address poolAddress = factory.createPool(
-            address(asset1),
-            address(asset2),
-            POOL_FEE
-        );
-        require(poolAddress != address(0), "Failed to create Uniswap V3 Pool");
-
-        IUniswapV3Pool pool = IUniswapV3Pool(poolAddress);
-        uint160 sqrtPriceX96 = 79228162514264337593543950336; // 1:1 price
-        pool.initialize(sqrtPriceX96);
-
-        return poolAddress;
-    }
 
     function setUp() public virtual {
         Deploy.DeployParams memory params = Deploy.DeployParams({
@@ -247,25 +230,15 @@ contract BaseTest is Test {
             0,
             address(this),
             address(verifier),
-            address(uniTickAttestor)
+            address(uniTickAttestor),
+            address(protocol.pool()),
+            address(asset1)
         );
 
         poolOwner = address(comptroller);
 
         asset1.mint(poolOwner, 4e7);
         asset2.mint(poolOwner, 1e7);
-
-        // (
-        //     fixedRatePool,
-        //     linearRatePool,
-        //     fixedRatePool2,
-        //     linearRatePool2,
-        //     alternateAssetPool
-        // ) = comptroller.approveRiskEngine(
-        //     address(asset1),
-        //     address(asset2),
-        //     address(protocol.pool())
-        // );
 
         vm.startPrank(poolOwner);
         asset1.approve(address(protocol.pool()), type(uint256).max);
