@@ -26,3 +26,8 @@ report.txt
 # config
 config/
 script/config/
+
+# ezkl logs
+script/ezkl/app.log
+script/ezkl/cronjob.log
+script/ezkl/timelog.txt
