@@ -367,24 +367,14 @@ contract DataAttestationSingle is LoadInstances, SwapProofCommitments {
             _accountCall.callData
         );
         int256[] memory x = abi.decode(returnData, (int256[]));
-        uint _offset;
-        int output = quantizeData(x[0], _accountCall.decimals, _scales[0]);
-        uint field_element = toFieldElement(output);
+        int output;
+        uint fieldElement;
         for (uint i = 0; i < x.length; i++) {
-            if (field_element != instances[i + instanceOffset]) {
-                _offset += 1;
-            } else {
-                break;
-            }
-        }
-        uint length = x.length - _offset;
-        for (uint i = 1; i < length; i++) {
             output = quantizeData(x[i], _accountCall.decimals, _scales[i]);
-            field_element = toFieldElement(output);
-            require(
-                field_element == instances[i + instanceOffset + _offset],
-                "Public input does not match"
-            );
+            fieldElement = toFieldElement(output);
+            if (fieldElement != instances[i + instanceOffset]) {
+                revert("Public input does not match");
+            }
         }
     }
 
