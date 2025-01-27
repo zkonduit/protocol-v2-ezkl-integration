@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import "../BaseScript.s.sol";
-import { console2 } from "forge-std/console2.sol";
-import { RiskEngine } from "src/RiskEngine.sol";
+import {console2} from "forge-std/console2.sol";
+import {RiskEngine} from "src/RiskEngine.sol";
 
 contract SetOracle is BaseScript {
     address asset;
@@ -23,6 +23,8 @@ contract SetOracle is BaseScript {
 
         asset = vm.parseJsonAddress(config, "$.SetOracle.asset");
         oracle = vm.parseJsonAddress(config, "$.SetOracle.oracle");
-        riskEngine = RiskEngine(vm.parseJsonAddress(config, "$.SetOracle.riskEngine"));
+        riskEngine = RiskEngine(
+            vm.parseJsonAddress(config, "$.SetOracle.riskEngine")
+        );
     }
 }

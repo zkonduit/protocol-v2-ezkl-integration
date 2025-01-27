@@ -394,18 +394,17 @@ interface IERC20 {
     function decimals() external view returns (uint8);
 }
 
-interface IUniswapV3PoolDerivedState {
-    function observe(
-        uint32[] calldata secondsAgos
-    )
-        external
-        view
-        returns (
-            int56[] memory tickCumulatives,
-            uint160[] memory secondsPerLiquidityCumulativeX128s
-        );
-    function token0() external view returns (address);
-    function token1() external view returns (address);
+/// @title IOracle
+/// @notice Common interface for all oracle implementations
+interface IOracle {
+    /// @notice Compute the equivalent ETH value for a given amount of a particular asset
+    /// @param asset Address of the asset to be priced
+    /// @param amt Amount of the given asset to be priced
+    /// @return valueInEth Equivalent ETH value for the given asset and amount, scaled by 18 decimals
+    function getValueInEth(
+        address asset,
+        uint256 amt
+    ) external view returns (uint256 valueInEth);
 }
 
 contract UniTickAttestor {
@@ -414,46 +413,20 @@ contract UniTickAttestor {
         uint16 counter; // Number of cached entries
     }
 
-    uint public constant X96 = 2 ** 96;
-    uint public constant X172 = 2 ** 172;
-
     int256[] public dailyRatioCache;
     CacheInfo public cacheInfo;
-    address immutable USDC_WETH_005;
-    int24 immutable DECIMAL_RATIO_TICK_BASIS;
+    address immutable Oracle;
 
     /*
      * @param _dailyRatioCache: Array of cached daily AMT values
      * @param pool: Address of the Uniswap V3 pool
      * @param decimalRatioTickBasis: Decimal ratio of asset  of tick basis
      */
-    constructor(int256[] memory _dailyRatioCache, address pool) {
+    constructor(int256[] memory _dailyRatioCache, address oracle) {
         dailyRatioCache = _dailyRatioCache;
         cacheInfo.counter = 0; // Initialize counter
         cacheInfo.firstTimestamp = uint48(block.timestamp);
-        USDC_WETH_005 = pool;
-        // fetch the token0 and token1 of the pool
-        uint8 decimals0 = IERC20(IUniswapV3PoolDerivedState(pool).token0())
-            .decimals();
-        uint8 decimals1 = IERC20(IUniswapV3PoolDerivedState(pool).token1())
-            .decimals();
-        // calculate the decimal ratio of the tick basis
-        int8 decimalsDiff = int8(decimals0) - int8(decimals1);
-        // revert if decimal difference is not divisible by 2
-        require(decimalsDiff % 2 == 0, "BP");
-        uint160 sqrtRatioDecimalsScaled;
-        if (decimalsDiff < 0) {
-            sqrtRatioDecimalsScaled = uint160(
-                X96 / (10 ** (uint8(-decimalsDiff) / 2))
-            );
-        } else {
-            sqrtRatioDecimalsScaled = uint160(
-                10 ** (uint8(decimalsDiff) / 2) * X96
-            );
-        }
-        DECIMAL_RATIO_TICK_BASIS = TickMath.getTickAtSqrtRatio(
-            sqrtRatioDecimalsScaled
-        );
+        Oracle = oracle;
     }
 
     function consult(
@@ -467,36 +440,7 @@ contract UniTickAttestor {
             ];
         }
     }
-
-    function consultRatio(
-        IUniswapV3PoolDerivedState pool,
-        uint32 secondsAgo,
-        uint32 buffer
-    ) public view returns (int256 ratioX20) {
-        require(secondsAgo != 0, "BP");
-
-        uint32[] memory secondsAgos = new uint32[](2);
-        secondsAgos[0] = buffer + secondsAgo;
-        secondsAgos[1] = buffer;
-
-        (int56[] memory tickCumulatives, ) = pool.observe(secondsAgos);
-
-        int56 tickCumulativesDelta = tickCumulatives[1] - tickCumulatives[0];
-        int24 arithmeticMeanTick = int24(
-            tickCumulativesDelta / int32(secondsAgo)
-        );
-        if (
-            tickCumulativesDelta < 0 &&
-            (tickCumulativesDelta % int32(secondsAgo) != 0)
-        ) arithmeticMeanTick--;
-        arithmeticMeanTick = arithmeticMeanTick + DECIMAL_RATIO_TICK_BASIS;
-
-        uint160 sqrtRatioX96 = TickMath.getSqrtRatioAtTick(arithmeticMeanTick);
-
-        ratioX20 = int256(FullMath.mulDiv(sqrtRatioX96, sqrtRatioX96, X172));
-    }
-
-    function cacheDailyTick() public {
+    function cacheDailyPrice() public {
         CacheInfo memory _cacheInfo = cacheInfo;
 
         uint256 expectedTimestamp = uint256(cacheInfo.firstTimestamp) +
@@ -510,22 +454,13 @@ contract UniTickAttestor {
             "Too early to cache new tick"
         );
 
-        // Check that we're not too late
-        require(
-            timeSinceExpected <= (24 * 60 * 60 + 50000),
-            "Too late to cache tick"
+        uint256 usdcInEth = IOracle(Oracle).getValueInEth(
+            address(0x765a02fF66731f7551c8212b0aB777B2392Ae903),
+            1e6 // 1 USDC, since usdc has 6 decimals
         );
+        uint256 ethInUsdc = (1e6 * 1e18) / usdcInEth;
 
-        // Calculate the buffer as the time since the expected timestamp
-        uint32 buffer = uint32(timeSinceExpected - 24 * 60 * 60);
-
-        int256 ratioX96 = consultRatio(
-            IUniswapV3PoolDerivedState(USDC_WETH_005),
-            3600,
-            buffer
-        );
-
-        dailyRatioCache.push(ratioX96);
+        dailyRatioCache.push(int256(ethInUsdc)); // safe to cast down since int256.max > 1e24
         cacheInfo.counter++; // Increment counter after successful cache
         cacheInfo = _cacheInfo;
     }
