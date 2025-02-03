@@ -8,9 +8,9 @@ import {MockERC20} from "../mocks/MockERC20.sol";
 import {Action, Operation} from "src/PositionManager.sol";
 import {RiskEngine} from "src/RiskEngine.sol";
 import {FixedPriceOracle} from "src/oracle/FixedPriceOracle.sol";
-import {UniTickAttestor} from "src/ezkl/UniTickAttestor.sol";
 import {Halo2Verifier} from "src/ezkl/Verifier.sol";
 import {console2} from "forge-std/console2.sol";
+import {console} from "forge-std/console.sol";
 
 contract RiskEngineUnitTests is BaseTest {
     Pool pool;
@@ -85,7 +85,6 @@ contract RiskEngineUnitTests is BaseTest {
             0x0000000000000000000000000000000000000000000000000000000000000351
         )
     ];
-
     function setUp() public override {
         super.setUp();
 

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {DataAttestationSingle} from "./DA.sol";
-import {UniTickAttestor} from "./UniTickAttestor.sol";
+import {SentimentOracleCache} from "./SentimentOracleCache.sol";
 import {Halo2Verifier} from "./Verifier.sol";
 
 /// @title Replaces governance control of `RiskEngine.sol` with a comptroller contact
