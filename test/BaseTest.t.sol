@@ -9,6 +9,7 @@ import {MockSwap} from "./mocks/MockSwap.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {Test} from "forge-std/Test.sol";
+import {console} from "forge-std/console.sol";
 import {console2} from "forge-std/console2.sol";
 import {Pool} from "src/Pool.sol";
 import {Position} from "src/Position.sol";
@@ -155,28 +156,10 @@ contract BaseTest is Test {
         // Deploy the verifier contract
         Halo2Verifier verifier = new Halo2Verifier();
 
-        uint256[20] memory scales = [
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13)
-        ];
+        uint256[] memory scales = new uint256[](20);
+        for (uint i = 0; i < 20; i++) {
+            scales[i] = 13;
+        }
 
         // Deploy UniTickAttestor
         SentimentOracleCache sentimentOracleCache = new SentimentOracleCache(
