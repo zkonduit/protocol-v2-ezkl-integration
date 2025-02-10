@@ -24,17 +24,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Delay between calls in seconds
-DELAY = 24 * 60 * 60
+SECONDS_IN_DAY = 86400
+
+# Delay between LTV update calls in seconds, every 20 days
+LTV_UPDATE_PERIOD = (SECONDS_IN_DAY)*20
 
 # SentimentOracleCache contract address
-CONTRACT_ADDRESS = "0x4eD0DddB67b2f1Af63E12DaAD6b875cB4B5C19d6"
+ORACLE_CACHE_ADDRESS = "0x8f981a7d8Ed904964160BB90c94B87216874F591"
+
+# Comptroller contract address
+COMPTROLLER_ADDRESS = "0xdFfDF3DfDeD0532B5549e5330FD5576c33F468c0"
 
 # Risk Engine
-RISK_ENGINE = "0x4eD0DddB67b2f1Af63E12DaAD6b875cB4B5C19d6"
+RISK_ENGINE = "0x3463E8dBC202074c0c0102fD367a914d2FF22e90"
 
 # Pool Id
-POOL_ID = "86167537019523045059845889392111673410425287543259506254051510722764541494675"
+POOL_ID = "106862083712814642108280330106973632744360221096518562188891018686660283800368"
 
 # Debt Token Address
 DEBT = "0x765a02fF66731f7551c8212b0aB777B2392Ae903"
@@ -127,7 +132,7 @@ def fetch_ratio_data() -> List[int]:
         
         # Initialize contracts
         contract = w3.eth.contract(
-            address=CONTRACT_ADDRESS,
+            address=ORACLE_CACHE_ADDRESS,
             abi=ABI_CACHE
         )
         debt_token = w3.eth.contract(
@@ -184,8 +189,20 @@ def main(
     risk_engine: str,
     pool_id: int,
     asset: str,
-    chain: str = "arbitrum",
+    chain: str,
 ) -> None:
+    # Build function arguments as a Python list.
+    function_args_list = [
+        action,
+        risk_engine,
+        pool_id,
+        asset,
+        "proof",
+        "instances"
+    ]
+
+    # Serialize the list to a JSON string.
+    function_args_json = json.dumps(function_args_list)
     try:
         res = requests.post(
             url="https://archon-v0.ezkl.xyz/recipe",
@@ -230,8 +247,8 @@ def main(
                     "callback": {
                         "chain": chain,
                         "contract_address": contract_address,
-                        "function_interface": "function ltvUpdate(uint256 _action, address _riskEngine, uint256 _poolId, address _asset, bytes calldata proof, uint256[] calldata instances)",
-                        "function_args": f'[{action}, {risk_engine}, {pool_id}, {asset}, "proof", "instances"]',
+                        "function_interface": "function ltvUpdate(uint8 _action, address _riskEngine, uint256 _poolId, address _asset, bytes calldata proof, uint256[] calldata instances)",
+                        "function_args": function_args_json,
                     },
                 },
             }
@@ -258,7 +275,7 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error("Script execution failed", exc_info=True)
 
-    api_key = os.getenv("API_KEY")
+    api_key = os.getenv("ARCHON_API_KEY")
 
     while True:
         try:
@@ -266,11 +283,11 @@ if __name__ == "__main__":
                 time_last = int(f.read())
                 time_now = time.time()
 
-                if time_now - time_last > DELAY:
-                    logger.info("Delay period elapsed, executing main function")
+                if time_now - time_last > LTV_UPDATE_PERIOD:
+                    logger.info("LTV update period elapsed, executing main function to perfrom LTV update")
                     main(
                         api_key=api_key,
-                        contract_address=CONTRACT_ADDRESS,
+                        contract_address=COMPTROLLER_ADDRESS,
                         input_data=input_data, 
                         action=0,
                         risk_engine=RISK_ENGINE,
@@ -278,6 +295,22 @@ if __name__ == "__main__":
                         asset=ASSET,
                         chain=CHAIN,
                     )
+                if time_now - time_last > (LTV_UPDATE_PERIOD + SECONDS_IN_DAY):
+                    logger.info("LTV update delay period elapsed, executing main function")
+                    main(
+                        api_key=api_key,
+                        contract_address=COMPTROLLER_ADDRESS,
+                        input_data=input_data, 
+                        action=1,
+                        risk_engine=RISK_ENGINE,
+                        pool_id=POOL_ID,
+                        asset=ASSET,
+                        chain=CHAIN,
+                    )   
+                    # if the delay period has elapsed, update the timelog file
+                    with open("timelog.txt", "w") as f:
+                        time_now = str(int(time.time()))
+                        f.write(time_now)          
 
         except FileNotFoundError:
             logger.info("Timelog file not found, creating new file")
@@ -288,7 +321,7 @@ if __name__ == "__main__":
             logger.info("Executing main function for first time")
             main(
                 api_key=api_key,
-                contract_address=CONTRACT_ADDRESS,
+                contract_address=COMPTROLLER_ADDRESS,
                 input_data=input_data, 
                 action=0,
                 risk_engine=RISK_ENGINE,
@@ -306,7 +339,7 @@ if __name__ == "__main__":
             logger.info("Executing main function after resetting timelog")
             main(
                 api_key=api_key,
-                contract_address=CONTRACT_ADDRESS,
+                contract_address=COMPTROLLER_ADDRESS,
                 input_data=input_data,
                 action=0,
                 risk_engine=RISK_ENGINE,

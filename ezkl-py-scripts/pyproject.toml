@@ -1,7 +1,7 @@
 [project]
 name = "sentiment-ezkl-py-scripts"
 version = "0.1.0"
-description = "Default template for PDM package"
+description = "Scripts for interacting with EZKL compute cluster"
 authors = [{ name = "Ethan", email = "tylercemer@gmail.com" }]
 dependencies = [
     "python-dotenv>=1.0.1",
