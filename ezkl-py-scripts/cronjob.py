@@ -3,10 +3,15 @@ from typing import List
 import time
 import logging
 from datetime import datetime
+from dotenv import load_dotenv
 import json
 from web3 import Web3
 import logging
 from typing import List
+import os
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -22,23 +27,23 @@ logger = logging.getLogger(__name__)
 # Delay between calls in seconds
 DELAY = 24 * 60 * 60
 
-# API key
-API_KEY = ""
-
-# UniTickAttestor contract address
-CONTRACT_ADDRESS = ""
+# SentimentOracleCache contract address
+CONTRACT_ADDRESS = "0x4eD0DddB67b2f1Af63E12DaAD6b875cB4B5C19d6"
 
 # Risk Engine
-RISK_ENGINE = ""
+RISK_ENGINE = "0x4eD0DddB67b2f1Af63E12DaAD6b875cB4B5C19d6"
 
 # Pool Id
-POOL_ID = ""
+POOL_ID = "86167537019523045059845889392111673410425287543259506254051510722764541494675"
 
-# Asset
-ASSET = ""
+# Debt Token Address
+DEBT = "0x765a02fF66731f7551c8212b0aB777B2392Ae903"
+
+# Asset Token Address
+ASSET = "0x3f7D64EB22BE53f618adCAe15aa10b61bdB14d89"
 
 # Chain
-CHAIN = "arbitrum"
+CHAIN = "hyperliquidTestnet"
 
 # Configure logging
 logging.basicConfig(
@@ -52,20 +57,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-ARBITRUM_RPC_URL = "https://arb1.arbitrum.io/rpc"
-CONTRACT_ADDRESS = ""  # Add your UniTickAttestor contract address
+HL_TEST_RPC_URL = "https://api.hyperliquid-testnet.xyz/evm"
 DAYS_AGO = 20
 
-# ABI for the consult function
-ABI = [
+# ABI for the comptroller with just consult function
+ABI_CACHE = [
     {
         "inputs": [
-            {
-                "internalType": "uint32",
-                "name": "daysAgo",
-                "type": "uint32"
-            }
-        ],
+                {
+                    "name": "daysAgo",
+                    "type": "uint32",
+                    "internalType": "uint32"
+                },
+                {
+                    "name": "debtToken",
+                    "type": "address",
+                    "internalType": "address"
+                },
+                {
+                    "name": "assetToken",
+                    "type": "address",
+                    "internalType": "address"
+                }
+            ],
         "name": "consult",
         "outputs": [
             {
@@ -78,33 +92,59 @@ ABI = [
         "type": "function"
     }
 ]
+# ABI for the ERC20 token with just decimals function
+ABI_ERC20 = [
+    {
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [
+            {
+                "internalType": "uint8",
+                "name": "",
+                "type": "uint8"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]
 
 def fetch_ratio_data() -> List[int]:
     """
-    Fetches ratio data from the UniTickAttestor contract for the last 20 days.
+    Fetches ratio data from the SentimentOracleCache contract for the last 20 days.
     
     Returns:
-        List[int]: List of ratio values for the specified number of days
+        List[int]: List of prices for the specified number of days
     """
     try:
         # Initialize Web3
-        w3 = Web3(Web3.HTTPProvider(ARBITRUM_RPC_URL))
+        w3 = Web3(Web3.HTTPProvider(HL_TEST_RPC_URL))
         
         if not w3.is_connected():
-            raise Exception("Failed to connect to Arbitrum network")
+            raise Exception("Failed to connect to hyperliquid test network")
             
-        logger.info("Connected to Arbitrum network")
+        logger.info("Connected to hyperliquid test network")
         
-        # Initialize contract
+        # Initialize contracts
         contract = w3.eth.contract(
-            address=Web3.to_checksum_address(CONTRACT_ADDRESS),
-            abi=ABI
+            address=CONTRACT_ADDRESS,
+            abi=ABI_CACHE
+        )
+        debt_token = w3.eth.contract(
+            address=DEBT,
+            abi=ABI_ERC20
         )
         
-        # Call consult function
-        ratio_data = contract.functions.consult(DAYS_AGO).call()
+        # Call consult function to fetch ratio data
+        ratio_data = contract.functions.consult(DAYS_AGO, DEBT, ASSET).call()
+
+        # Call the decimals function on the debt token (b/c the ratio is in the debt token's decimals)
+        debt_decimals = debt_token.functions.decimals().call()
+
+        # Convert the ratio data to the correct decimal value
+        ratio_data = [ratio / 10 ** debt_decimals for ratio in ratio_data]
         
-        logger.info(f"Successfully fetched ratio data for {DAYS_AGO} days")
+        logger.info(f"Successfully fetched ratio data for {DAYS_AGO} days for debt {DEBT} and asset {ASSET} pairs")
         logger.info(f"Ratio data: {ratio_data}")
         
         return ratio_data
@@ -156,7 +196,7 @@ def main(
             json={
                 "commands": [
                     {
-                        "artifact": "garch-deploy",
+                        "artifact": "garch",
                         "binary": "ezkl",
                         "deployment": None,
                         "command": [
@@ -167,7 +207,7 @@ def main(
                         ],
                     },
                     {
-                        "artifact": "garch-deploy",
+                        "artifact": "garch",
                         "deployment": None,
                         "binary": "ezkl",
                         "command": [
@@ -212,6 +252,13 @@ def main(
 
 if __name__ == "__main__":
     logger.info("Starting application...")
+    try:
+        input_data = get_input_data()
+        print(f"Input data for cronjob: {input_data}")
+    except Exception as e:
+        logger.error("Script execution failed", exc_info=True)
+
+    api_key = os.getenv("API_KEY")
 
     while True:
         try:
@@ -222,14 +269,14 @@ if __name__ == "__main__":
                 if time_now - time_last > DELAY:
                     logger.info("Delay period elapsed, executing main function")
                     main(
-                        api_key=API_KEY,
+                        api_key=api_key,
                         contract_address=CONTRACT_ADDRESS,
                         input_data=input_data, 
                         action=0,
                         risk_engine=RISK_ENGINE,
                         pool_id=POOL_ID,
                         asset=ASSET,
-                        chain="arbitrum",
+                        chain=CHAIN,
                     )
 
         except FileNotFoundError:
@@ -240,14 +287,14 @@ if __name__ == "__main__":
 
             logger.info("Executing main function for first time")
             main(
-                api_key=API_KEY,
+                api_key=api_key,
                 contract_address=CONTRACT_ADDRESS,
                 input_data=input_data, 
                 action=0,
                 risk_engine=RISK_ENGINE,
                 pool_id=POOL_ID,
                 asset=ASSET,
-                chain="arbitrum",
+                chain=CHAIN,
             )
 
         except ValueError:
@@ -258,14 +305,14 @@ if __name__ == "__main__":
 
             logger.info("Executing main function after resetting timelog")
             main(
-                api_key=API_KEY,
+                api_key=api_key,
                 contract_address=CONTRACT_ADDRESS,
                 input_data=input_data,
                 action=0,
                 risk_engine=RISK_ENGINE,
                 pool_id=POOL_ID,
                 asset=ASSET,
-                chain="arbitrum",
+                chain=CHAIN,
             )
 
         logger.info("Sleeping as callback has been run...")

@@ -9,6 +9,7 @@ import {MockSwap} from "./mocks/MockSwap.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {Test} from "forge-std/Test.sol";
+import {console} from "forge-std/console.sol";
 import {console2} from "forge-std/console2.sol";
 import {Pool} from "src/Pool.sol";
 import {Position} from "src/Position.sol";
@@ -24,7 +25,7 @@ import {SuperPoolLens} from "src/lens/SuperPoolLens.sol";
 import {FixedPriceOracle} from "src/oracle/FixedPriceOracle.sol";
 import {Comptroller} from "src/ezkl/Comptroller.sol";
 import {Halo2Verifier} from "src/ezkl/Verifier.sol";
-import {UniTickAttestor} from "src/ezkl/UniTickAttestor.sol";
+import {SentimentOracleCache} from "src/ezkl/SentimentOracleCache.sol";
 
 // Add Uniswap V3 imports
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
@@ -60,9 +61,6 @@ contract BaseTest is Test {
     uint public constant LOOKBACK_DAYS = 20;
     Comptroller public comptroller;
     int256[] public dailyPrices;
-    IUniswapV3Factory public uniswapFactory;
-    IUniswapV3Pool public uniswapPool;
-    uint24 public constant POOL_FEE = 3000; // 0.3% fee tier
 
     // Split pool creation into separate function
 
@@ -71,8 +69,8 @@ contract BaseTest is Test {
             owner: protocolOwner,
             proxyAdmin: proxyAdmin,
             feeRecipient: address(this),
-            minLtv: 1e17, // 0.1
-            maxLtv: 9e17, // 0.9
+            minLtv: 2e17, // 0.1
+            maxLtv: 9.5e17, // 0.95
             minDebt: 0,
             minBorrow: 0,
             liquidationFee: 0,
@@ -85,7 +83,7 @@ contract BaseTest is Test {
         protocol = new Deploy();
         protocol.runWithParams(params);
 
-        asset1 = new MockERC20("Asset1", "ASSET1", 18);
+        asset1 = new MockERC20("Asset1", "ASSET1", 6); // mock this to be USDC, so use 6 decimals
         asset2 = new MockERC20("Asset2", "ASSET2", 18);
         asset3 = new MockERC20("Asset3", "ASSET3", 18);
 
@@ -158,49 +156,35 @@ contract BaseTest is Test {
         // Deploy the verifier contract
         Halo2Verifier verifier = new Halo2Verifier();
 
-        uint256[20] memory scales = [
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13),
-            uint256(13)
-        ];
+        uint256[] memory scales = new uint256[](20);
+        for (uint i = 0; i < 20; i++) {
+            scales[i] = 13;
+        }
 
         // Deploy UniTickAttestor
-        UniTickAttestor uniTickAttestor = new UniTickAttestor(
+        SentimentOracleCache sentimentOracleCache = new SentimentOracleCache(
             recentPrices,
-            address(testOracle)
+            address(protocol.riskEngine()),
+            address(asset1),
+            address(asset2)
         );
 
         bytes memory call_data = abi.encodeWithSelector(
-            UniTickAttestor.consult.selector,
-            LOOKBACK_DAYS
+            sentimentOracleCache.consult.selector,
+            LOOKBACK_DAYS,
+            address(asset1),
+            address(asset2)
         ); // The call data which fetches the data to be attested to.
 
         // Update the comptroller deployment to use the actual Uniswap pool
         comptroller = new Comptroller(
             call_data,
-            6, // The number of decimals in USDC
+            asset1.decimals(), // The number of decimals in debt token (mock USDC)
             scales,
             0,
             address(this),
             address(verifier),
-            address(uniTickAttestor),
+            address(sentimentOracleCache),
             address(protocol.pool()),
             address(asset1)
         );

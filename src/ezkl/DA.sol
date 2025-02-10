@@ -205,7 +205,7 @@ contract DataAttestationSingle is LoadInstances, SwapProofCommitments {
         address _contractAddresses,
         bytes memory _callData,
         uint256 _decimals,
-        uint[20] memory _scales,
+        uint[] memory _scales,
         uint8 _instanceOffset,
         address _admin
     ) {

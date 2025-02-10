@@ -55,3 +55,6 @@ number_underscore = "thousands"
 multiline_func_header = "all"
 single_line_statement_blocks = "single"
 auto_detect_solc = true
+
+[rpc_endpoints]
+hltestnet = "${HL_TESTNET}"

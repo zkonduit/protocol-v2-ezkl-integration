@@ -1,0 +1,19 @@
+[project]
+name = "sentiment-ezkl-py-scripts"
+version = "0.1.0"
+description = "Default template for PDM package"
+authors = [{ name = "Ethan", email = "tylercemer@gmail.com" }]
+dependencies = [
+    "python-dotenv>=1.0.1",
+    "requests",
+    "web3",
+    "eth-abi>=4.1.0,<5.0.0",
+    "hyperliquid-python-sdk>=0.9.0",
+]
+requires-python = "==3.12.*"
+readme = "README.md"
+license = { text = "MIT" }
+
+
+[tool.pdm]
+distribution = false
